@@ -1,14 +1,9 @@
 #/bin/bash
 
-LINEAGEVERSION=lineage-15.1
+LINEAGEVERSION=ridon-7.1.2
 DATE=`date +%Y%m%d`
 IMGNAME=$LINEAGEVERSION-$DATE-rpi3.img
 IMGSIZE=4
-
-if [ `id -u` != 0 ]; then
-	echo "Must be root to run script!"
-	exit
-fi
 
 if [ -f $IMGNAME ]; then
 	echo "File $IMGNAME already exists!"
@@ -16,64 +11,38 @@ else
 	echo "Creating image file $IMGNAME..."
 	dd if=/dev/zero of=$IMGNAME bs=512k count=$(echo "$IMGSIZE*1024*2" | bc)
 	sync
+	sudo modprobe loop
 	echo "Creating partitions..."
-	kpartx -a $IMGNAME
+	echo -e "o\nn\np\n1\n\n+100M\nn\np\n2\n\n+1024M\nn\np\n3\n\n+256M\nn\np\n\n\nt\n1\nc\na\n1\nw\n" | /sbin/fdisk $IMGNAME
 	sync
-	(
-	echo o
-	echo n
-	echo p
-	echo 1
-	echo
-	echo +128M
-	echo n
-	echo p
-	echo 2
-	echo
-	echo +1024M
-	echo n
-	echo p
-	echo 3
-	echo
-	echo +256M
-	echo n
-	echo p
-	echo 4
-	echo
-	echo
-	echo t
-	echo 1
-	echo c
-	echo a
-	echo 1
-	echo w
-	) | fdisk /dev/loop0
-	sync
-	kpartx -d $IMGNAME
-	sync
-	kpartx -a $IMGNAME
-	sync
-	sleep 5
-	mkfs.fat -F 32 /dev/mapper/loop0p1
-	mkfs.ext4 /dev/mapper/loop0p4
+	sudo kpartx -a $IMGNAME
+
+	DEVa=`sudo kpartx -l $IMGNAME | sed -n 1p | cut -f1 -d' '`
+	if [ -z $DEVa ];then
+		echo "Partitions in $IMGNAME can't be read"
+  		exit
+	fi
+	DEVb=`sudo kpartx -l $IMGNAME | sed -n 2p | cut -f1 -d' '`
+
+	sudo mkfs.fat -F 32 /dev/mapper/$DEVa
+	sudo mkfs.ext4 /dev/mapper/$DEVb
+
 	echo "Copying system..."
-	dd if=../../../out/target/product/rpi3/system.img of=/dev/mapper/loop0p2 bs=1M
-	echo "Copying vendor..."
-	dd if=../../../out/target/product/rpi3/vendor.img of=/dev/mapper/loop0p3 bs=1M
+	sudo dd if=../../../out/target/product/rpi3/system.img of=/dev/mapper/$DEVb bs=1M
 	echo "Copying boot..."
 	mkdir -p sdcard/boot
 	sync
-	mount /dev/mapper/loop0p1 sdcard/boot
+	sudo mount /dev/mapper/$DEVa sdcard/boot
 	sync
-	cp boot/* sdcard/boot
-	cp ../../../vendor/brcm/rpi3/proprietary/boot/* sdcard/boot
-	cp ../../../out/target/product/rpi3/obj/KERNEL_OBJ/arch/arm/boot/zImage sdcard/boot
-	cp -R ../../../out/target/product/rpi3/obj/KERNEL_OBJ/arch/arm/boot/dts/* sdcard/boot
-	cp ../../../out/target/product/rpi3/ramdisk.img sdcard/boot
+	sudo cp boot/* sdcard/boot
+	sudo cp ../../../vendor/brcm/rpi3/proprietary/boot/* sdcard/boot
+	sudo cp ../../../out/target/product/rpi3/obj/KERNEL_OBJ/arch/arm/boot/zImage sdcard/boot
+	sudo cp -R ../../../out/target/product/rpi3/obj/KERNEL_OBJ/arch/arm/boot/dts/* sdcard/boot
+	sudo cp ../../../out/target/product/rpi3/ramdisk.img sdcard/boot
 	sync
-	umount /dev/mapper/loop0p1
+	sudo umount /dev/mapper/$DEVa
 	rm -rf sdcard
-	kpartx -d $IMGNAME
+	sudo kpartx -d $IMGNAME
 	sync
 	echo "Done, created $IMGNAME!"
 fi
